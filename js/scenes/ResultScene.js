@@ -9,7 +9,7 @@ export class ResultScene {
     this.sm = sm;
     this.r = result;
 
-    const cx = 360, w = 240, h = 48, gap = 12, y0 = 270;
+    const cx = 500, w = 240, h = 100, gap = 16, y0 = 360;
 
     if (this.r.win){
       this.btnNext = new Button(cx, y0, w, h, "Next", () => {
@@ -27,6 +27,68 @@ export class ResultScene {
     this.btnBack = new Button(cx, y0 + (h+gap), w, h, "Back to Studio", () => {
       this.sm.set(new StudioScene(this.s, this.sm));
     });
+
+    // Load icons and button images
+    this.uiIcons = {};
+    this.uiIconsLoaded = false;
+    this.buttonImages = {};
+    this.buttonImagesLoaded = false;
+    this.fontsLoaded = false;
+    
+    this.loadUIIcons();
+    this.loadButtonImages();
+    this.loadFonts();
+  }
+
+  async loadFonts() {
+    try {
+      const titleFont = new FontFace('TitleFont', 'url(ttf/titles.ttf)');
+      await titleFont.load();
+      document.fonts.add(titleFont);
+      this.fontsLoaded = true;
+    } catch (e) {
+      this.fontsLoaded = false;
+    }
+  }
+
+  async loadUIIcons() {
+    const iconNames = ['score', 'currency'];
+    const promises = [];
+    
+    iconNames.forEach(name => {
+      const img = new Image();
+      promises.push(
+        new Promise((resolve) => {
+          img.onload = () => resolve();
+          img.onerror = () => resolve();
+          img.src = `img/icons/${name}.png`;
+        })
+      );
+      this.uiIcons[name] = img;
+    });
+    
+    await Promise.all(promises);
+    this.uiIconsLoaded = true;
+  }
+
+  async loadButtonImages() {
+    const buttonNames = ['replay', 'back'];
+    const promises = [];
+    
+    buttonNames.forEach(name => {
+      const img = new Image();
+      promises.push(
+        new Promise((resolve) => {
+          img.onload = () => resolve();
+          img.onerror = () => resolve();
+          img.src = `img/buttons/${name}.png`;
+        })
+      );
+      this.buttonImages[name] = img;
+    });
+    
+    await Promise.all(promises);
+    this.buttonImagesLoaded = true;
   }
 
   update(dt){
@@ -38,21 +100,67 @@ export class ResultScene {
 
   render(ctx){
     ctx.save();
-    ctx.fillStyle = "#121212";
+    ctx.fillStyle = "#0a0a0a";
     ctx.fillRect(0,0,this.s.canvas.width,this.s.canvas.height);
 
+    // Title
+    ctx.fillStyle = this.r.win ? "#7CFC90" : "#FF6B6B";
+    ctx.font = this.fontsLoaded ? "56px TitleFont" : "56px TitleFont, sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText(this.r.win ? "YOU WIN!" : "YOU LOSE", 640, 100);
+
+    // Money earned with icon
+    ctx.textAlign = "left";
+    if (this.uiIconsLoaded && this.uiIcons['currency']) {
+      ctx.drawImage(this.uiIcons['currency'], 450, 150, 36, 36);
+      ctx.fillStyle = "#FFD700";
+      ctx.font = this.fontsLoaded ? "28px DefaultFont" : "28px DefaultFont, sans-serif";
+      ctx.fillText(`+${this.r.earned}`, 500, 180);
+    } else {
+      ctx.fillStyle = "#FFD700";
+      ctx.font = this.fontsLoaded ? "26px DefaultFont" : "26px DefaultFont, sans-serif";
+      ctx.fillText(`Money earned: ${this.r.earned}`, 450, 180);
+    }
+
+    // Scores with icon
     ctx.fillStyle = "#f2f2f2";
-    ctx.font = "30px sans-serif";
-    ctx.fillText(this.r.win ? "YOU WIN!" : "YOU LOSE", 390, 170);
+    ctx.font = this.fontsLoaded ? "22px DefaultFont" : "22px DefaultFont, sans-serif";
+    
+    if (this.uiIconsLoaded && this.uiIcons['score']) {
+      ctx.drawImage(this.uiIcons['score'], 420, 230, 32, 32);
+      ctx.fillText(`Your score: ${this.r.playerScore}`, 470, 258);
+      ctx.fillText(`Enemy score: ${this.r.enemyScore}`, 470, 300);
+    } else {
+      ctx.fillText(`Your score: ${this.r.playerScore}`, 420, 258);
+      ctx.fillText(`Enemy score: ${this.r.enemyScore}`, 420, 300);
+    }
 
-    ctx.font = "18px sans-serif";
-    ctx.fillText(`Money earned: ${this.r.earned}`, 20, 30);
-    ctx.fillText(`Your score: ${this.r.playerScore}`, 390, 210);
-    ctx.fillText(`Enemy score: ${this.r.enemyScore}`, 390, 235);
+    // Buttons with images
+    if (this.buttonImagesLoaded) {
+      // Next/Retry button (use play image)
+      if (this.btnNext && this.buttonImages['replay']) {
+        const rect = this.btnNext.rect;
+        ctx.drawImage(this.buttonImages['replay'], rect.x, rect.y, rect.w, rect.h);
+      } else if (this.btnRetry && this.buttonImages['replay']) {
+        const rect = this.btnRetry.rect;
+        ctx.drawImage(this.buttonImages['replay'], rect.x, rect.y, rect.w, rect.h);
+      } else {
+        this.btnRetry?.render(ctx);
+        this.btnNext?.render(ctx);
+      }
 
-    this.btnRetry?.render(ctx);
-    this.btnNext?.render(ctx);
-    this.btnBack.render(ctx);
+      // Back button
+      if (this.buttonImages['back']) {
+        const rect = this.btnBack.rect;
+        ctx.drawImage(this.buttonImages['back'], rect.x, rect.y, rect.w, rect.h);
+      } else {
+        this.btnBack.render(ctx);
+      }
+    } else {
+      this.btnRetry?.render(ctx);
+      this.btnNext?.render(ctx);
+      this.btnBack.render(ctx);
+    }
 
     ctx.restore();
   }
