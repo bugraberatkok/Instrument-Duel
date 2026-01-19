@@ -294,8 +294,8 @@ export class StudioScene {
     ctx.font = this.fontsLoaded ? "20px DefaultFont" : "20px sans-serif";
     
     if (this.uiIconsLoaded && this.uiIcons['currency']) {
-      ctx.drawImage(this.uiIcons['currency'], 24, 62, 28, 28);
-      ctx.fillText(`${this.s.profile.money}`, 60, 85);
+      ctx.drawImage(this.uiIcons['currency'], 24, 78, 28, 28);
+      ctx.fillText(`${this.s.profile.money}`, 60, 100);
     } else {
       ctx.fillText(`Money: ${this.s.profile.money}`, 24, 85);
     }
@@ -397,7 +397,7 @@ export class StudioScene {
 
     ctx.font = this.fontsLoaded ? "28px DefaultFont" : "28px TitleFont, sans-serif";
     ctx.fillStyle = "#00CED1";
-    ctx.fillText(`${level.name} - ${level.enemyName}`, this.infoRect.x + 40, 150);
+    ctx.fillText(`${level.name} - ${level.enemyName}`, this.infoRect.x + 40, 175);
 
     ctx.font = this.fontsLoaded ? "20px DefaultFont" : "20px DefaultFont, sans-serif";
     ctx.fillStyle = "#f2f2f2";
@@ -405,7 +405,7 @@ export class StudioScene {
 
     ctx.font = this.fontsLoaded ? "16px DefaultFont" : "16px DefaultFont, sans-serif";
     ctx.fillStyle = "#888";
-    ctx.fillText(`Unlocked up to: Level ${this.s.profile.unlockedLevel + 1}`, this.infoRect.x + 40, 255);
+    ctx.fillText(`Unlocked up to: Level ${this.s.profile.unlockedLevel + 1}`, this.infoRect.x + 40, 240);
 
     // ANIMATED RIFF KID CHARACTER
     if (this.characterImagesLoaded) {

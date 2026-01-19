@@ -103,8 +103,8 @@ export class MainMenuScene {
     ctx.fillText("INSTRUMENT DUEL", 240, 140);
 
     ctx.fillStyle = "#f2f2f2";
-    ctx.font = this.fontsLoaded ? "18px DefaultFont" : "18px DefaultFont, sans-serif";
-    ctx.fillText("mouse-based rhythm and clicker progression", 470, 205);
+    ctx.font = this.fontsLoaded ? "30px DefaultFont" : "18px DefaultFont, sans-serif";
+    ctx.fillText("mouse-based rhythm and clicker progression", 370, 205);
 
     // Money with icon
     if (this.uiIconsLoaded && this.uiIcons['currency']) {

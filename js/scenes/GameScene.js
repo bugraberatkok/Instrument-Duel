@@ -574,9 +574,9 @@ export class GameScene {
     
     // Score with icon
     if (this.uiIconsLoaded && this.uiIcons['score']) {
-      ctx.drawImage(this.uiIcons['score'], 20, 38, 28, 28);
-      ctx.fillText(`${this.score}`, 54, 60);
-      ctx.fillText(`Combo: ${this.combo}x`, 180, 60);
+      ctx.drawImage(this.uiIcons['score'], 20, 70, 28, 28);
+      ctx.fillText(`${this.score}`, 54, 92);
+      ctx.fillText(`Combo: ${this.combo}x`, 20, 60);
     } else {
       ctx.fillText(`Score: ${this.score}  Combo: ${this.combo}x`, 20, 55);
     }
