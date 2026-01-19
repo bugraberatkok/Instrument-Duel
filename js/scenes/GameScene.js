@@ -1,6 +1,7 @@
 import { Rect } from "../core/Rect.js";
 import { LEVELS } from "../data/levels.js";
 import { ResultScene } from "./ResultScene.js";
+import { loadMidiForPlayback } from "../meta/MidiPlayback.js";
 
 export class GameScene {
   constructor(shared, sm, levelIndex){
@@ -9,45 +10,146 @@ export class GameScene {
     this.levelIndex = levelIndex;
     this.level = LEVELS[levelIndex];
 
+    // States: LOADING | COUNTDOWN | PLAY
+    this.state = "LOADING";
+
     // Countdown
-    this.state = "COUNTDOWN"; // COUNTDOWN | PLAY
     this.count = 3;
     this.countTimer = 0;
 
-    // Timing
+    // Timing (WebAudio-driven)
     this.t = 0;
+    this._startAudioTime = 0;
 
-    // Scoring base
+    // Scoring
     this.score = 0;
     this.combo = 0;
 
-    // Windows (seconds)
-    this.perfect = 0.06;
-    this.good = 0.12;
+    // Windows (seconds) - Daha forgiving yapıldı
+    this.perfect = 0.08;
+    this.good = 0.15;
 
-    // Apply upgrades
+    // Upgrades
     this.scoreMult = this.s.profile.owned["score_mult"] ? 1.15 : 1.0;
     this.holdToleranceMult = this.s.profile.owned["forgiving_hold"] ? 1.25 : 1.0;
-    this.comboBoost = this.s.profile.owned["combo_boost"] ? 0.7 : 1.0; // reach 5x earlier
+    this.comboBoost = this.s.profile.owned["combo_boost"] ? 0.7 : 1.0;
 
-    // For hold tracking
-    this.activeHold = null; // note object currently holding
-    this.notes = this.level.notes.map(n => ({
-      lane: n.lane,
-      time: n.time,
-      hold: n.hold ?? 0,
-      hit: false,
-      missed: false,
-      holding: false,
-      released: false
-    }));
+    // Notes (for visuals + scoring)
+    this.notes = [];
 
-    // UI layout: instrument keys at bottom
+    // MIDI playback events
+    this._events = [];
+    this._nextEvent = 0;
+
+    // Hold tracking
+    this.activeHold = null;
+
+    // UI layout
     this.keyCount = this.level.keyCount;
     this.keys = this.buildKeys();
     this.hitLineY = 360;
     this.noteSpeed = 220;
     this.lead = 1.6;
+
+    // Simple RNG for lane assignment
+    this._seed = (this.levelIndex + 1) * 9999;
+
+    // Key sprites
+    this.keyImages = {};
+    this.imagesLoaded = false;
+  }
+
+  _rand(){
+    this._seed = (this._seed * 1664525 + 1013904223) >>> 0;
+    return this._seed / 4294967296;
+  }
+
+  async loadKeyImages(){
+    const promises = [];
+    for (let i = 1; i <= this.keyCount; i++){
+      const normal = new Image();
+      const pressed = new Image();
+      
+      promises.push(
+        new Promise((resolve) => {
+          normal.onload = () => resolve();
+          normal.src = `img/keys/key${i}.png`;
+        }),
+        new Promise((resolve) => {
+          pressed.onload = () => resolve();
+          pressed.src = `img/keys/key${i}-pressed.png`;
+        })
+      );
+
+      this.keyImages[i] = { normal, pressed };
+    }
+    
+    await Promise.all(promises);
+    this.imagesLoaded = true;
+  }
+
+  async onEnter(){
+    this.s.audio.ensure();
+
+    // Load key sprites
+    await this.loadKeyImages();
+
+    if (!this.level.midiSrc){
+      this.level = { ...this.level, lengthSec: this.level.lengthSec ?? 30, bpm: this.level.bpm ?? 120 };
+      this._events = [];
+      this.notes = [];
+      this.state = "COUNTDOWN";
+      this.count = 3;
+      this.countTimer = 0;
+      return;
+    }
+
+    // 1) MIDI'yi playback için yükle (melodiyi çalmak için)
+    const pb = await loadMidiForPlayback(this.level.midiSrc);
+
+    // 2) Level bilgilerini güncelle
+    this.level = {
+      ...this.level,
+      lengthSec: pb.lengthSec,
+      bpm: pb.bpm
+    };
+
+    // 3) Playback eventleri
+    this._events = pb.events;
+    this._nextEvent = 0;
+
+    // 4) Visual/scoring notes üret
+    const minGap = this.level.midiOptions?.minGap ?? 0.25;
+    let lastT = -999;
+
+    this.notes = [];
+    for (const ev of this._events){
+      if (ev.time - lastT < minGap) continue;
+      lastT = ev.time;
+
+      const lane = Math.floor(this._rand() * this.keyCount);
+      const hold = (ev.dur >= 0.50) ? ev.dur : 0;
+
+      this.notes.push({
+        lane,
+        time: ev.time,
+        hold,
+        midi: ev.midi,
+        hit: false,
+        missed: false,
+        holding: false,
+        holdReleased: false  // Hold serbest bırakıldı mı
+      });
+    }
+
+    // 5) Countdown
+    this.state = "COUNTDOWN";
+    this.count = 3;
+    this.countTimer = 0;
+  }
+
+  onExit(){
+    this.s.audio.stopDrumLoop?.();
   }
 
   buildKeys(){
@@ -68,6 +170,11 @@ export class GameScene {
   update(dt){
     const input = this.s.input;
 
+    if (this.state === "LOADING"){
+      return;
+    }
+
+    // COUNTDOWN
     if (this.state === "COUNTDOWN"){
       this.countTimer += dt;
       if (this.countTimer >= 1){
@@ -75,19 +182,22 @@ export class GameScene {
         this.count -= 1;
         if (this.count <= 0){
           this.state = "PLAY";
+          this._startAudioTime = this.s.audio.now();
           this.t = 0;
         }
       }
       return;
     }
 
-    // PLAY
-    this.t += dt;
+    // PLAY time from WebAudio
+    this.t = Math.max(0, this.s.audio.now() - this._startAudioTime);
 
-    // key press visuals
+    // ❌ MIDI artık otomatik çalınmıyor - sadece oyuncu basınca çalacak
+
+    // UI pressed reset
     for (const k of this.keys) k.pressed = false;
 
-    // detect which key is under mouse
+    // input handling
     const mx = input.mouse.x, my = input.mouse.y;
     const hoveredKey = this.keys.find(k => k.rect.contains(mx,my)) ?? null;
 
@@ -102,9 +212,7 @@ export class GameScene {
 
     this.autoMiss();
 
-    // End condition: after last note + buffer or level length
-    const endTime = this.level.lengthSec;
-    if (this.t > endTime){
+    if (this.t > (this.level.lengthSec ?? 30)){
       this.finish();
     }
   }
@@ -112,28 +220,35 @@ export class GameScene {
   tryHitOrStartHold(laneId){
     const now = this.t;
 
-    // find a hittable note in window
-    const note = this.notes.find(n => !n.hit && !n.missed && Math.abs(now - n.time) <= this.good);
+    // En yakın, henüz vurulmamış notayı bul (lane match gerekli)
+    const note = this.notes.find(n =>
+      !n.hit && !n.missed &&
+      n.lane === laneId &&
+      Math.abs(now - n.time) <= this.good
+    );
     if (!note) return;
-    if (note.lane !== laneId) return;
 
     const diff = Math.abs(now - note.time);
     const quality = diff <= this.perfect ? "PERFECT" : "GOOD";
 
-    // Tap note
+    // ✅ Notayı vurduğumuzda SESİ ÇAL - piano sample kullan
     if (note.hold <= 0){
+      // Normal nota - kısa piano sesi
+      this.s.audio.playPianoNote(note.midi, 0.25);
       note.hit = true;
-      this.addScore(quality, false);
+      this.addScore(quality);
       return;
     }
 
-    // Start hold
-    if (!note.holding && !note.hit){
+    // Hold nota başlat
+    if (!note.holding){
       note.holding = true;
       note.holdStart = now;
-      note.qualityOnStart = quality;
       this.activeHold = note;
-      this.addScore(quality, true); // small reward for starting
+      this.addScore(quality);
+      
+      // Hold için daha uzun piano sesi
+      this.s.audio.playPianoNote(note.midi, Math.min(1.5, note.hold * 0.8));
     }
   }
 
@@ -142,37 +257,29 @@ export class GameScene {
 
     const now = this.t;
     const n = this.activeHold;
-    n.released = true;
-
     const requiredEnd = n.time + n.hold;
     const tolerance = this.good * this.holdToleranceMult;
 
-    const ok = now >= requiredEnd - tolerance;
-    if (ok){
+    if (now >= requiredEnd - tolerance){
+      // Başarıyla tamamlandı
       n.hit = true;
-      // completion reward
+      n.holdReleased = true;
       this.score += Math.floor(250 * this.scoreMult);
       this.combo += 1;
     } else {
+      // Erken bıraktı
       n.missed = true;
+      n.holdReleased = true;
       this.registerMiss();
     }
 
     this.activeHold = null;
   }
 
-  addScore(quality, isHoldStart){
-    const base = quality === "PERFECT" ? 300 : 150;
-    const amount = Math.floor(base * this.scoreMult);
-    this.score += amount;
-
-    // combo
+  addScore(quality){
+    const base = (quality === "PERFECT") ? 320 : 260;
+    this.score += Math.floor(base * this.scoreMult);
     this.combo += 1;
-
-    // optional: if hold start, slightly less combo? keep simple
-    if (isHoldStart){
-      // no special handling
-    }
   }
 
   registerMiss(){
@@ -184,54 +291,51 @@ export class GameScene {
     const now = this.t;
     for (const n of this.notes){
       if (n.hit || n.missed) continue;
-
-      // tap miss
-      if (n.hold <= 0 && now > n.time + this.good){
-        n.missed = true;
-        this.registerMiss();
-      }
-
-      // hold miss (never started)
-      if (n.hold > 0 && !n.holding && now > n.time + this.good){
-        n.missed = true;
-        this.registerMiss();
+      
+      // Hold notalar için özel mantık
+      if (n.hold > 0){
+        // Hold başladı ama tamamlanmadı ve süresi doldu
+        if (n.holding && now > n.time + n.hold + this.good){
+          n.missed = true;
+          n.holdReleased = true;
+          this.registerMiss();
+          if (this.activeHold === n) this.activeHold = null;
+        }
+        // Hold hiç başlamadı ve başlama süresi doldu
+        else if (!n.holding && now > n.time + this.good){
+          n.missed = true;
+          this.registerMiss();
+        }
+      } else {
+        // Normal nota
+        if (now > n.time + this.good){
+          n.missed = true;
+          this.registerMiss();
+        }
       }
     }
   }
 
   getComboMultiplier(){
-    // comboBoost makes threshold smaller
-    // default: 5x at 10 combo
-    const thresholdFor5x = Math.floor(10 * this.comboBoost);
-
-    if (this.combo >= thresholdFor5x) return 5;
+    if (this.combo >= Math.floor(10 * this.comboBoost)) return 5;
     if (this.combo >= Math.floor(6 * this.comboBoost)) return 3;
     if (this.combo >= Math.floor(3 * this.comboBoost)) return 2;
     return 1;
   }
 
   finish(){
-    // apply combo multiplier at end as a simple meta reward
     const mult = this.getComboMultiplier();
     const finalScore = this.score * mult;
-
-    // enemy expected score is the benchmark to beat
-    const enemyScore = this.level.expectedScore;
+    const enemyScore = this.level.expectedScore ?? 2000;
     const win = finalScore >= enemyScore;
 
-    // money earned even on loss
-    // (simple rule): money = floor(finalScore / 10); win bonus +20%
     let earned = Math.floor(finalScore / 10);
     if (win) earned = Math.floor(earned * 1.2);
 
     this.s.profile.money += earned;
 
-    // unlock next level if win
-    if (win){
-      const nextUnlock = Math.min(this.s.profile.unlockedLevel + 1, LEVELS.length - 1);
-      if (this.levelIndex === this.s.profile.unlockedLevel && this.levelIndex < LEVELS.length - 1){
-        this.s.profile.unlockedLevel = nextUnlock;
-      }
+    if (win && this.levelIndex === this.s.profile.unlockedLevel){
+      this.s.profile.unlockedLevel = Math.min(this.s.profile.unlockedLevel + 1, LEVELS.length - 1);
     }
 
     this.s.profile.save();
@@ -250,13 +354,18 @@ export class GameScene {
     ctx.fillStyle = "#151515";
     ctx.fillRect(0,0,this.s.canvas.width,this.s.canvas.height);
 
-    // Header info
     ctx.fillStyle = "#f2f2f2";
     ctx.font = "18px sans-serif";
-    ctx.fillText(`${this.level.name}  vs  ${this.level.enemyName}`, 20, 30);
-    ctx.fillText(`Score: ${this.score}  Combo: ${this.combo}  (End Mult: x${this.getComboMultiplier()})`, 20, 55);
+    ctx.fillText(`${this.level.name} vs ${this.level.enemyName}`, 20, 30);
+    ctx.fillText(`Score: ${this.score}  Combo: ${this.combo}x`, 20, 55);
 
-    // Countdown overlay
+    if (this.state === "LOADING"){
+      ctx.font = "28px sans-serif";
+      ctx.fillText("Loading...", 360, 260);
+      ctx.restore();
+      return;
+    }
+
     if (this.state === "COUNTDOWN"){
       ctx.font = "96px sans-serif";
       ctx.fillText(String(this.count), 450, 280);
@@ -264,51 +373,101 @@ export class GameScene {
       return;
     }
 
-    // Notes
     this.renderNotes(ctx);
-
-    // Instrument keys
     this.renderKeys(ctx);
-
     ctx.restore();
   }
 
   renderKeys(ctx){
     for (const k of this.keys){
-      ctx.fillStyle = k.pressed ? "#e0e0e0" : "#b0b0b0";
-      ctx.fillRect(k.rect.x, k.rect.y, k.rect.w, k.rect.h);
-      ctx.fillStyle = "#111";
-      ctx.font = "18px sans-serif";
-      ctx.fillText(`K${k.id+1}`, k.rect.x + 10, k.rect.y + 28);
+      const keyNum = k.id + 1;
+      
+      if (this.imagesLoaded && this.keyImages[keyNum]){
+        // Sprite kullan
+        const img = k.pressed ? this.keyImages[keyNum].pressed : this.keyImages[keyNum].normal;
+        ctx.drawImage(img, k.rect.x, k.rect.y, k.rect.w, k.rect.h);
+      } else {
+        // Fallback: renkli dikdörtgen
+        ctx.fillStyle = k.pressed ? "#e0e0e0" : "#b0b0b0";
+        ctx.fillRect(k.rect.x, k.rect.y, k.rect.w, k.rect.h);
+        ctx.fillStyle = "#111";
+        ctx.fillText(`K${keyNum}`, k.rect.x + 10, k.rect.y + 28);
+      }
     }
   }
 
   renderNotes(ctx){
     const now = this.t;
+    
     for (const n of this.notes){
-      if (n.hit || n.missed) continue;
+      // Hit veya tamamen missed olanları gösterme
+      if (n.hit || (n.missed && n.holdReleased)) continue;
 
       const dtToTarget = n.time - now;
+      
+      // Görünürlük kontrolü
       if (dtToTarget < -0.3 || dtToTarget > this.lead) continue;
 
       const keyRect = this.keys[n.lane].rect;
-      const y = this.hitLineY - (dtToTarget * this.noteSpeed);
       const x = keyRect.x + keyRect.w * 0.25;
       const w = keyRect.w * 0.5;
-      const h = 18;
 
-      ctx.fillStyle = "#66d9ef";
-      ctx.fillRect(x, y, w, h);
-
+      // Hold notası
       if (n.hold > 0){
-        const tailH = n.hold * this.noteSpeed;
-        ctx.fillStyle = "#a6e22e";
-        ctx.fillRect(x + w*0.4, y, w*0.2, tailH);
+        const noteStartTime = n.time;
+        const noteEndTime = n.time + n.hold;
+        
+        // Hold devam ediyorsa, geçen kısmı gösterme
+        let visibleStartTime = n.holding ? now : noteStartTime;
+        let visibleEndTime = noteEndTime;
+        
+        // Başlangıç ve bitiş Y pozisyonları
+        let startY = this.hitLineY - ((visibleStartTime - now) * this.noteSpeed);
+        let endY = this.hitLineY - ((visibleEndTime - now) * this.noteSpeed);
+
+        // Ekrandan çıkmışları kesme
+        const topY = Math.max(0, Math.min(startY, endY));
+        const bottomY = Math.min(this.s.canvas.height, Math.max(startY, endY));
+        const h = Math.abs(bottomY - topY);
+
+        if (h > 2){
+          // Hold çubuğu - aktif ise altın sarısı
+          ctx.fillStyle = n.holding ? "#FFD700" : "#a6e22e";
+          ctx.fillRect(x + w*0.35, topY, w*0.3, h);
+          
+          // Kenarlık
+          ctx.strokeStyle = n.holding ? "#FFA500" : "#7CFC00";
+          ctx.lineWidth = 2;
+          ctx.strokeRect(x + w*0.35, topY, w*0.3, h);
+        }
+
+        // Başlangıç notası - head (sadece henüz vurulmadıysa)
+        if (!n.holding && dtToTarget <= this.lead && dtToTarget >= -0.3){
+          const y = this.hitLineY - (dtToTarget * this.noteSpeed);
+          ctx.fillStyle = "#00CED1";
+          ctx.fillRect(x, y - 10, w, 20);
+          
+          // Parlak kenarlık
+          ctx.strokeStyle = "#40E0D0";
+          ctx.lineWidth = 2;
+          ctx.strokeRect(x, y - 10, w, 20);
+        }
+      } else {
+        // Normal nota
+        const y = this.hitLineY - (dtToTarget * this.noteSpeed);
+        ctx.fillStyle = "#66d9ef";
+        ctx.fillRect(x, y - 9, w, 18);
+        
+        // Kenarlık ekle
+        ctx.strokeStyle = "#40E0D0";
+        ctx.lineWidth = 2;
+        ctx.strokeRect(x, y - 9, w, 18);
       }
     }
 
-    // hit line
-    ctx.strokeStyle = "#444";
+    // Hit line
+    ctx.strokeStyle = "#FFD700";
+    ctx.lineWidth = 3;
     ctx.beginPath();
     ctx.moveTo(120, this.hitLineY);
     ctx.lineTo(840, this.hitLineY);

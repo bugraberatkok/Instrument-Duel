@@ -2,6 +2,7 @@ import { SceneManager } from "./SceneManager.js";
 import { InputManager } from "../input/InputManager.js";
 import { PlayerProfile } from "../meta/PlayerProfile.js";
 import { MainMenuScene } from "../scenes/MainMenuScene.js";
+import { AudioEngine } from "../audio/AudioEngine.js";
 
 export class Game {
   constructor(canvas){
@@ -12,11 +13,14 @@ export class Game {
 
     this.profile = PlayerProfile.load();
 
+    this.audio = new AudioEngine();
+
     this.shared = {
       canvas,
       ctx: this.ctx,
       input: this.input,
-      profile: this.profile
+      profile: this.profile,
+      audio: this.audio
     };
   }
 
@@ -25,6 +29,11 @@ export class Game {
   }
 
   update(dt){
+    // WebAudio autoplay policy unlock
+    if (this.input.mouse.justDown){
+      this.audio.ensure();
+    }
+
     this.scenes.update(dt);
     this.input.endFrame();
   }
