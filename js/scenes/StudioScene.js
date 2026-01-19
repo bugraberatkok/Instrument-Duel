@@ -204,7 +204,7 @@ export class StudioScene {
       
       // Button her zaman oluştur ama yeterli para yoksa disabled hale getir
       const btnY = y0 + i * itemHeight + 65;
-      const btnW = 36;   // Kare ve küçük
+      const btnW = 52;   // Kare ve küçük
       const btnH = 36;   // Kare ve küçük
       
       const btn = new Button(x + 70, btnY, btnW, btnH, "", () => {
