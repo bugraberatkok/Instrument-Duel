@@ -10,6 +10,7 @@ export class Game {
     this.ctx = canvas.getContext("2d");
     this.input = new InputManager(canvas);
     this.scenes = new SceneManager();
+    this.ctx.imageSmoothingEnabled = true;
 
     this.profile = PlayerProfile.load();
 

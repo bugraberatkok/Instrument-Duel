@@ -3,8 +3,8 @@
 
 export async function loadMidiToChart(url, {
   keyCount = 5,
-  minGap = 0.26,     // ✅ clicker için kritik (0.24-0.32 arası iyi)
-  quantize = 0.05,   // ✅ 50ms grid
+  minGap = 0.26,     // clicker için kritik (0.24-0.32 arası iyi)
+  quantize = 0.05,   // 50ms grid
   pickTrack = "largest"
 } = {}) {
   const res = await fetch(url);

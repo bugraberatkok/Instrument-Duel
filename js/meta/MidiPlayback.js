@@ -1,12 +1,8 @@
 // src/meta/MidiPlayback.js
 import { loadMidiToChart } from "./MidiLoader.js";
 
-// Bu fonksiyon: midi'yi okur, notaları zamanına göre sıralar ve playback için döner
 export async function loadMidiForPlayback(url){
-  // MidiLoader zaten fetch+parse yapıyor; ama bizim playback için
-  // "midi note + time + duration" lazım.
-  // O yüzden MidiLoader'ı biraz genişletmek en güzeli.
-  // Şimdilik direkt Midi globali ile okuyalım:
+
 
   const res = await fetch(url);
   if (!res.ok) throw new Error(`MIDI fetch failed: ${res.status}`);
@@ -16,7 +12,7 @@ export async function loadMidiForPlayback(url){
 
   const bpm = midi.header.tempos?.[0]?.bpm ?? 120;
 
-  // melody track seçimi: genelde en yüksek ortalama pitch daha melodidir
+  // melody track seçimi
   const tracks = midi.tracks.filter(t => t.notes.length > 0);
   const scoreTrack = (t) => {
     const avg = t.notes.reduce((s,n)=>s+n.midi,0) / t.notes.length;

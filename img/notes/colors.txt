@@ -1,0 +1,7 @@
+1 (purple): 5f208e
+2 (yellow/orange): ffa800
+3 (green): 4bbb0d
+4 (red): a40e0e
+5 (pink): dd00c0
+
+NOTE: for the actual hold notes you might wanna turn a bit off alpha so its semi-transparent
